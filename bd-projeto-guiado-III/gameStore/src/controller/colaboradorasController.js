@@ -20,9 +20,9 @@ const create = async (req, res) => {
 }
 
 const getAll = async (req, res) => {
+  // Adicionei autenticação nessa rota pois não é seguro
+  // permitir que usuários não cadastrados acessem dados.
   try {
-    // Adicionei autenticação nessa rota pois não seria seguro
-    // permitir que usuários não cadastrados acessem dados.
     const authHeader = req.get('authorization');
     if (!authHeader) {
       throw new Error('No authorization info!');
@@ -32,18 +32,19 @@ const getAll = async (req, res) => {
     const colaboradoras = await Colaboradoras.find();
     res.status(200).json({ colaboradoras });
   } catch (err) {
-    switch (err.message) {
-      case 'No authorization info!':
-        return res.status(401).send(err.message);
-      case 'JsonWebTokenError':
-        return res.status(403).send('Access not authorized!');
-      default:
-        return res.status(500).send({ message: err.message });
+    if (err.message === 'No authorization info!') {
+      return res.status(401).send(err.message);
+    } else if (err.message === 'JsonWebTokenError') {
+      return res.status(403).send('Access not authorized!');
+    } else {
+      return res.status(500).send({ message: err.message });
     }
   }
 };
 
 const deleteByID = async (req, res) => {
+  // Adicionei autenticação nessa rota pois não é seguro
+  // permitir que usuários não cadastrados deletem dados.
   try {
     const authHeader = req.get('authorization');
     if (!authHeader) {
@@ -56,32 +57,49 @@ const deleteByID = async (req, res) => {
     const message = `A colaboradora com o id ${id} foi deletada com sucesso`;
     return res.status(200).json({ message });
   } catch (err) {
-    switch (err.message) {
-      case 'No authorization info!':
-        return res.status(401).send(err.message);
-      case 'JsonWebTokenError':
-        return res.status(403).send('Access not authorized!');
-      default:
-        return res.status(500).send({ message: err.message });
+    if (err.message === 'No authorization info!') {
+      return res.status(401).send(err.message);
+    } else if (err.message === 'JsonWebTokenError') {
+      return res.status(403).send('Access not authorized!');
+    } else {
+      return res.status(500).send({ message: err.message });
     }
   }
 };
 
 const login = (req, res) => {
-  Colaboradoras.findOne({ email: req.body.email }, function (error, colaboradora) {
-    if (!colaboradora) {
-      return res.status(404).send(`Não existe colaboradora com o email ${req.body.email}`);
+  try {
+    Colaboradoras.findOne(
+      { email: req.body.email },
+      (colaboradora) => {
+        if (!colaboradora) {
+          throw new Error('Colaborator not found!');
+        }
+        const senhaValida = bcrypt.compareSync(
+          req.body.senha,
+          colaboradora.senha
+        );
+        if (!senhaValida) {
+          throw new Error('Invalid password');
+        }
+        const token = jwt.sign({ email: req.body.email }, SECRET);
+        res.status(200).send(token);
+      }
+    );
+  } catch (err) {
+    if (err.message === 'Colaborator not found!') {
+      res
+        .status(404)
+        .send(
+          `Não existe colaboradora com o email ${req.body.email}`
+        );
+    } else if (err.message === 'Invalid password') {
+      res.status(403).send('Erro ao digitar a senha');
+    } else {
+      res.status(500).send({ message: err.message });
     }
-
-    const senhaValida = bcrypt.compareSync(req.body.senha, colaboradora.senha)
-
-    if (!senhaValida) {
-      return res.status(403).send('erro ao digitar a senha')
-    }
-    const token = jwt.sign({ email: req.body.email }, SECRET)
-    return res.status(200).send(token)
-  })
-}
+  }
+};
 
 module.exports = {
   create,
